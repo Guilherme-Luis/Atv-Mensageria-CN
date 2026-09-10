@@ -41,24 +41,30 @@ Documentacao em http://localhost:3000/docs
 Banco: localhost:3306/marketplace
 Escutando projects/serjava-demo/subscriptions/grupo-j
 
-==========================================================================
-  PEDIDO ORD-2025-0001  [INSERIDO]
-==========================================================================
-  Recebido    01/10/2025 10:15:03 UTC
-  Mensagem    15098036413456
-  Criado em   01/10/2025 10:15:00 UTC
-  Status      separated   (canal: mobile_app)
-  Cliente     7788 - Maria Oliveira <maria@email.com>
-  Vendedor    55 - Tech Store (São Paulo/SP)
-  Pagamento   pix / approved  pay_987654321
-  Entrega     Correios / SEDEX / shipped  BR123456789
---------------------------------------------------------------------------
-  Itens       1 item
-      2x  televisao bonita                R$ 2.500,00     R$ 5.000,00
-         abc-1344  Eletrônicos > Smartphones
---------------------------------------------------------------------------
-  TOTAL DO PEDIDO                                              R$ 5.000,00
-==========================================================================
+[2025-10-01T10:15:03.412Z] PUBSUB ORD-2025-0001 inserido | total R$ 5.000,00 | 1 item | mensagem 15098036413456
+{
+  "uuid": "ORD-2025-0001",
+  "created_at": "2025-10-01T10:15:00Z",
+  "channel": "mobile_app",
+  "status": "separated",
+  "customer": {
+    "id": 7788,
+    "name": "Maria Oliveira",
+    "email": "maria@email.com",
+    "document": "987.654.321-00"
+  },
+  "items": [
+    {
+      "id": 1,
+      "product": {
+        "id": "abc-1344",
+        "title": "televisao bonita"
+      },
+      "unit_price": 2500,
+      "quantity": 2
+    }
+  ]
+}
 
 [2025-10-01T10:15:20.118Z] HTTP GET /orders?page=1 200 12.4ms
 ```

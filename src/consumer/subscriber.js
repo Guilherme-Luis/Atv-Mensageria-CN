@@ -3,7 +3,7 @@ const { PubSub } = require('@google-cloud/pubsub');
 const config = require('../config');
 const { InvalidPayloadError } = require('../domain/errors');
 const { ingerirMensagem } = require('../services/ingestOrder');
-const { formatarPedido } = require('./formatter');
+const { formatarMensagem, formatarDescarte } = require('./formatter');
 
 const contadores = { processadas: 0, descartadas: 0, falhas: 0 };
 
@@ -19,13 +19,12 @@ async function tratarMensagem(message) {
     });
 
     contadores.processadas += 1;
-    console.log(formatarPedido(resultado.pedido, resultado));
+    console.log(formatarMensagem(message.data, resultado));
     message.ack();
   } catch (error) {
     if (error instanceof InvalidPayloadError) {
       contadores.descartadas += 1;
-      console.error(`[${indexadoEm.toISOString()}] PUBSUB mensagem ${message.id} descartada: ${error.message}`);
-      console.error(`[${indexadoEm.toISOString()}] PUBSUB conteudo: ${message.data.toString('utf8').slice(0, 500)}`);
+      console.error(formatarDescarte(message.data, message.id, error.message));
       message.ack();
       return;
     }
