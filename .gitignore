@@ -2,3 +2,8 @@ node_modules/
 Pub-Sub/
 sa-grupo-j-key.json
 .env
+
+docs/
+examples/
+samples/
+scripts/
