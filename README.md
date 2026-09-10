@@ -3,6 +3,11 @@
 Consumidor do Google Cloud Pub/Sub que lê pedidos de um marketplace, grava no MySQL e disponibiliza
 uma API REST para consulta.
 
+## Integrantes
+
+- Guilherme Luís Rodrigues Silva - RA 1091392413038
+-
+
 ## Requisitos
 
 - Node.js 18 ou superior
