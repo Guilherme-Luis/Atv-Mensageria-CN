@@ -23,12 +23,48 @@ O `migrate` cria o banco `marketplace` e as tabelas.
 ## Executando
 
 ```bash
-npm run consumer   # fica escutando a subscription e gravando os pedidos
-npm start          # sobe a API em http://localhost:3000
+npm start          # sobe a API e escuta a subscription no mesmo processo
+npm run consumer   # sobe apenas o consumidor, sem a API
 ```
 
-Os dois rodam separados, cada um em seu terminal. A base só recebe pedidos quando chega mensagem
-no tópico `aula-pub`.
+O `npm start` já deixa o consumidor escutando, então um terminal só resolve. O console mostra as
+requisições recebidas e os pedidos que chegam do Pub/Sub:
+
+```
+API disponivel em http://localhost:3000
+Documentacao em http://localhost:3000/docs
+Banco: localhost:3306/marketplace
+Escutando projects/serjava-demo/subscriptions/grupo-j
+
+==========================================================================
+  PEDIDO ORD-2025-0001  [INSERIDO]
+==========================================================================
+  Recebido    01/10/2025 10:15:03 UTC
+  Mensagem    15098036413456
+  Criado em   01/10/2025 10:15:00 UTC
+  Status      separated   (canal: mobile_app)
+  Cliente     7788 - Maria Oliveira <maria@email.com>
+  Vendedor    55 - Tech Store (São Paulo/SP)
+  Pagamento   pix / approved  pay_987654321
+  Entrega     Correios / SEDEX / shipped  BR123456789
+--------------------------------------------------------------------------
+  Itens       1 item
+      2x  televisao bonita                R$ 2.500,00     R$ 5.000,00
+         abc-1344  Eletrônicos > Smartphones
+--------------------------------------------------------------------------
+  TOTAL DO PEDIDO                                              R$ 5.000,00
+==========================================================================
+
+[2025-10-01T10:15:20.118Z] HTTP GET /orders?page=1 200 12.4ms
+```
+
+A base só recebe pedidos quando chega mensagem no tópico `aula-pub`.
+
+## Documentação
+
+Com a API no ar, a documentação Swagger fica em <http://localhost:3000/docs> e permite testar as
+rotas pelo navegador. A especificação OpenAPI é servida em `/openapi.json` e o arquivo está em
+[src/api/openapi.json](src/api/openapi.json).
 
 ## Endpoints
 
@@ -82,9 +118,9 @@ sempre soma `unit_price * quantity` na hora da consulta.
 
 ```
 src/
-  api/            rotas, validação e apresentação da resposta
+  api/            rotas, validação, resposta e especificação OpenAPI
   config/         leitura do .env
-  consumer/       assinante do Pub/Sub
+  consumer/       assinante do Pub/Sub (usado pela API e isolado)
   db/             schema, migração e pool de conexões
   domain/         validação e normalização do payload
   repositories/   escrita e leitura no MySQL

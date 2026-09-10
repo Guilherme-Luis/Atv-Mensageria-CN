@@ -1,0 +1,467 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "API de Pedidos - Mensageria",
+    "version": "1.0.0",
+    "description": "Consulta dos pedidos recebidos do Google Cloud Pub/Sub e gravados no MySQL. Os totais do pedido e de cada item sao calculados na consulta a partir de unit_price x quantity."
+  },
+  "servers": [
+    { "url": "http://localhost:3000", "description": "Ambiente local" }
+  ],
+  "tags": [
+    { "name": "Pedidos", "description": "Consulta de pedidos" },
+    { "name": "Servico", "description": "Verificacao da aplicacao" }
+  ],
+  "paths": {
+    "/orders": {
+      "get": {
+        "tags": ["Pedidos"],
+        "summary": "Lista os pedidos",
+        "description": "Retorna os pedidos paginados, no mesmo contrato do payload recebido pelo consumidor.",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Numero da pagina",
+            "schema": { "type": "integer", "minimum": 1, "default": 1 }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "description": "Quantidade de pedidos por pagina",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Campo de ordenacao",
+            "schema": { "type": "string", "enum": ["created_at", "indexed_at"], "default": "created_at" }
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "description": "Sentido da ordenacao",
+            "schema": { "type": "string", "enum": ["asc", "desc"], "default": "desc" }
+          },
+          {
+            "name": "customer.id",
+            "in": "query",
+            "description": "Filtra pelo id do cliente",
+            "example": 7788,
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "seller.id",
+            "in": "query",
+            "description": "Filtra pelo id do vendedor",
+            "example": 55,
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "product.id",
+            "in": "query",
+            "description": "Retorna os pedidos que contenham o produto informado",
+            "example": "abc-1344",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filtra pelo status do pedido",
+            "example": "paid",
+            "schema": { "type": "string", "enum": ["created", "paid", "shipped", "delivered", "canceled"] }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista paginada de pedidos",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OrderPage" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/InvalidRequest" }
+        }
+      }
+    },
+    "/orders/financial-summary": {
+      "get": {
+        "tags": ["Pedidos"],
+        "summary": "Resumo financeiro",
+        "description": "Totais consolidados dos pedidos, com quebra por status e por forma de pagamento.",
+        "parameters": [
+          {
+            "name": "seller.id",
+            "in": "query",
+            "description": "Restringe o resumo a um vendedor",
+            "example": 55,
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "start_date",
+            "in": "query",
+            "description": "Data inicial, comparada com created_at. Aceita YYYY-MM-DD ou ISO 8601.",
+            "example": "2025-10-01",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "description": "Data final, comparada com created_at. No formato YYYY-MM-DD cobre o dia inteiro.",
+            "example": "2025-10-31",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resumo financeiro do periodo",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/FinancialSummary" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/InvalidRequest" }
+        }
+      }
+    },
+    "/orders/{uuid}": {
+      "get": {
+        "tags": ["Pedidos"],
+        "summary": "Consulta um pedido",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "required": true,
+            "description": "Identificador do pedido no sistema de origem",
+            "example": "ORD-2025-0001",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pedido encontrado",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Order" }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/OrderNotFound" }
+        }
+      }
+    },
+    "/orders/{uuid}/items": {
+      "get": {
+        "tags": ["Pedidos"],
+        "summary": "Lista os itens de um pedido",
+        "description": "Retorna apenas a estrutura de itens, mantendo o formato do payload.",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "required": true,
+            "example": "ORD-2025-0001",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Itens do pedido",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OrderItems" }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/OrderNotFound" }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": ["Servico"],
+        "summary": "Verifica a API e o banco",
+        "responses": {
+          "200": {
+            "description": "Aplicacao respondendo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "ok" },
+                    "database": { "type": "string", "example": "marketplace" }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Banco indisponivel",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "unavailable" },
+                    "message": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "InvalidRequest": {
+        "description": "Parametro de consulta invalido",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "example": {
+              "error": {
+                "code": "INVALID_REQUEST",
+                "message": "Parametro \"page\" deve ser um inteiro maior que zero"
+              }
+            }
+          }
+        }
+      },
+      "OrderNotFound": {
+        "description": "Pedido nao encontrado",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "example": {
+              "error": {
+                "code": "ORDER_NOT_FOUND",
+                "message": "Pedido \"ORD-2025-9999\" nao encontrado"
+              }
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Customer": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 7788 },
+          "name": { "type": "string", "example": "Maria Oliveira" },
+          "email": { "type": "string", "nullable": true, "example": "maria@email.com" },
+          "document": { "type": "string", "nullable": true, "example": "987.654.321-00" }
+        }
+      },
+      "Seller": {
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "id": { "type": "integer", "example": 55 },
+          "name": { "type": "string", "example": "Tech Store" },
+          "city": { "type": "string", "nullable": true, "example": "Sao Paulo" },
+          "state": { "type": "string", "nullable": true, "example": "SP" }
+        }
+      },
+      "SubCategory": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "example": "PHONE" },
+          "name": { "type": "string", "example": "Smartphones" }
+        }
+      },
+      "Category": {
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "id": { "type": "string", "example": "ELEC" },
+          "name": { "type": "string", "example": "Eletronicos" },
+          "sub_category": { "$ref": "#/components/schemas/SubCategory" }
+        }
+      },
+      "Product": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "example": "abc-1344" },
+          "title": { "type": "string", "example": "televisao bonita" }
+        }
+      },
+      "Item": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 1 },
+          "product": { "$ref": "#/components/schemas/Product" },
+          "unit_price": { "type": "number", "format": "double", "example": 2500 },
+          "quantity": { "type": "integer", "example": 2 },
+          "category": { "$ref": "#/components/schemas/Category" },
+          "total": {
+            "type": "number",
+            "format": "double",
+            "description": "Calculado como unit_price x quantity",
+            "example": 5000
+          }
+        }
+      },
+      "Shipment": {
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "carrier": { "type": "string", "nullable": true, "example": "Correios" },
+          "service": { "type": "string", "nullable": true, "example": "SEDEX" },
+          "status": { "type": "string", "nullable": true, "example": "shipped" },
+          "tracking_code": { "type": "string", "nullable": true, "example": "BR123456789" }
+        }
+      },
+      "Payment": {
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "method": { "type": "string", "nullable": true, "example": "pix" },
+          "status": { "type": "string", "nullable": true, "example": "approved" },
+          "transaction_id": { "type": "string", "nullable": true, "example": "pay_987654321" }
+        }
+      },
+      "Metadata": {
+        "type": "object",
+        "properties": {
+          "source": { "type": "string", "nullable": true, "example": "app" },
+          "user_agent": { "type": "string", "nullable": true, "example": "Mozilla/5.0" },
+          "ip_address": { "type": "string", "nullable": true, "example": "10.0.0.1" }
+        }
+      },
+      "Order": {
+        "type": "object",
+        "properties": {
+          "uuid": { "type": "string", "example": "ORD-2025-0001" },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "example": "2025-10-01T10:15:00.000Z"
+          },
+          "channel": { "type": "string", "nullable": true, "example": "mobile_app" },
+          "total": {
+            "type": "number",
+            "format": "double",
+            "description": "Soma dos totais dos itens",
+            "example": 5000
+          },
+          "status": { "type": "string", "example": "paid" },
+          "customer": { "$ref": "#/components/schemas/Customer" },
+          "seller": { "$ref": "#/components/schemas/Seller" },
+          "items": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Item" }
+          },
+          "shipment": { "$ref": "#/components/schemas/Shipment" },
+          "payment": { "$ref": "#/components/schemas/Payment" },
+          "metadata": { "$ref": "#/components/schemas/Metadata" },
+          "indexed_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Momento em que a mensagem foi gravada no banco",
+            "example": "2025-10-01T10:15:03.412Z"
+          }
+        }
+      },
+      "OrderItems": {
+        "type": "object",
+        "properties": {
+          "uuid": { "type": "string", "example": "ORD-2025-0001" },
+          "items": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Item" }
+          }
+        }
+      },
+      "Pagination": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "example": 1 },
+          "page_size": { "type": "integer", "example": 20 },
+          "total_items": { "type": "integer", "example": 150 },
+          "total_pages": { "type": "integer", "example": 8 },
+          "has_next": { "type": "boolean", "example": true },
+          "has_previous": { "type": "boolean", "example": false }
+        }
+      },
+      "OrderPage": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Order" }
+          },
+          "pagination": { "$ref": "#/components/schemas/Pagination" },
+          "sort": {
+            "type": "object",
+            "properties": {
+              "field": { "type": "string", "example": "created_at" },
+              "order": { "type": "string", "example": "desc" }
+            }
+          },
+          "filters": {
+            "type": "object",
+            "description": "Filtros efetivamente aplicados na consulta",
+            "additionalProperties": true,
+            "example": { "customer.id": 7788 }
+          }
+        }
+      },
+      "PaymentMethodSummary": {
+        "type": "object",
+        "properties": {
+          "count": { "type": "integer", "example": 80 },
+          "total": { "type": "number", "format": "double", "example": 400000 }
+        }
+      },
+      "FinancialSummary": {
+        "type": "object",
+        "properties": {
+          "total_orders": { "type": "integer", "example": 150 },
+          "total_revenue": { "type": "number", "format": "double", "example": 750000 },
+          "average_order_value": { "type": "number", "format": "double", "example": 5000 },
+          "by_status": {
+            "type": "object",
+            "additionalProperties": { "type": "integer" },
+            "example": { "created": 10, "paid": 120, "shipped": 15, "delivered": 5 }
+          },
+          "by_payment_method": {
+            "type": "object",
+            "additionalProperties": { "$ref": "#/components/schemas/PaymentMethodSummary" },
+            "example": {
+              "pix": { "count": 80, "total": 400000 },
+              "credit_card": { "count": 50, "total": 250000 },
+              "boleto": { "count": 20, "total": 100000 }
+            }
+          },
+          "filters": {
+            "type": "object",
+            "properties": {
+              "seller.id": { "type": "integer", "nullable": true },
+              "start_date": { "type": "string", "format": "date-time", "nullable": true },
+              "end_date": { "type": "string", "format": "date-time", "nullable": true }
+            }
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": { "type": "string" },
+              "message": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

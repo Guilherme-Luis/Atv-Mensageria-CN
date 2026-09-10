@@ -3,7 +3,8 @@ const { salvarPedido } = require('../repositories/orderWriteRepository');
 
 async function ingerirMensagem(buffer, contexto = {}) {
   const pedido = parseMensagem(buffer);
-  return salvarPedido(pedido, contexto);
+  const resultado = await salvarPedido(pedido, contexto);
+  return { ...resultado, pedido, mensagemId: contexto.mensagemId || null };
 }
 
 module.exports = { ingerirMensagem };
