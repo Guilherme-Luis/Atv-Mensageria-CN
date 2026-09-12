@@ -1,6 +1,10 @@
 const pool = require('../db/pool');
 const { round2 } = require('../domain/money');
 
+const ERROS_TRANSITORIOS = new Set(['ER_LOCK_DEADLOCK', 'ER_LOCK_WAIT_TIMEOUT']);
+const MAX_TENTATIVAS = 5;
+const ESPERA_BASE_MS = 30;
+
 async function upsertCliente(conn, cliente) {
   await conn.execute(
     `INSERT INTO cliente (id, nome, email, documento) VALUES (?, ?, ?, ?) AS novo
@@ -79,14 +83,45 @@ async function upsertPedido(conn, pedido, contexto) {
   return { id: linhas[0].id, criado: resultado.affectedRows === 1 };
 }
 
+async function upsertReferencias(conn, itens) {
+  const produtos = new Map();
+  const categoriasRaiz = new Map();
+  const subcategorias = new Map();
+
+  for (const item of itens) {
+    produtos.set(item.produto.id, item.produto);
+
+    if (item.categoria) {
+      categoriasRaiz.set(item.categoria.id, item.categoria);
+    }
+
+    if (item.subcategoria) {
+      subcategorias.set(item.subcategoria.id, {
+        categoria: item.subcategoria,
+        paiId: item.categoria ? item.categoria.id : null
+      });
+    }
+  }
+
+  for (const id of [...produtos.keys()].sort()) {
+    await upsertProduto(conn, produtos.get(id));
+  }
+
+  for (const id of [...categoriasRaiz.keys()].sort()) {
+    await upsertCategoria(conn, categoriasRaiz.get(id), null);
+  }
+
+  for (const id of [...subcategorias.keys()].sort()) {
+    const sub = subcategorias.get(id);
+    await upsertCategoria(conn, sub.categoria, sub.paiId);
+  }
+}
+
 async function substituirItens(conn, pedidoId, itens) {
+  await upsertReferencias(conn, itens);
   await conn.execute('DELETE FROM item_pedido WHERE pedido_id = ?', [pedidoId]);
 
   for (const item of itens) {
-    await upsertProduto(conn, item.produto);
-    const categoriaId = await upsertCategoria(conn, item.categoria, null);
-    const subcategoriaId = await upsertCategoria(conn, item.subcategoria, categoriaId);
-
     await conn.execute(
       `INSERT INTO item_pedido (
          pedido_id, id_origem, produto_id, categoria_id, subcategoria_id,
@@ -96,8 +131,8 @@ async function substituirItens(conn, pedidoId, itens) {
         pedidoId,
         item.idOrigem,
         item.produto.id,
-        categoriaId,
-        subcategoriaId,
+        item.categoria ? item.categoria.id : null,
+        item.subcategoria ? item.subcategoria.id : null,
         item.precoUnitario,
         item.quantidade,
         item.valorTotal
@@ -139,7 +174,7 @@ async function recalcularTotal(conn, pedidoId) {
   return total;
 }
 
-async function salvarPedido(pedido, contexto = {}) {
+async function gravar(pedido, contexto) {
   const indexadoEm = contexto.indexadoEm || new Date();
   const conn = await pool.getConnection();
 
@@ -169,6 +204,37 @@ async function salvarPedido(pedido, contexto = {}) {
   } finally {
     conn.release();
   }
+}
+
+function esperar(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function salvarPedido(pedido, contexto = {}) {
+  let ultimoErro;
+
+  for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa += 1) {
+    try {
+      return await gravar(pedido, contexto);
+    } catch (error) {
+      if (!ERROS_TRANSITORIOS.has(error.code)) {
+        throw error;
+      }
+
+      ultimoErro = error;
+
+      if (tentativa < MAX_TENTATIVAS) {
+        const espera = ESPERA_BASE_MS * 2 ** (tentativa - 1) + Math.floor(Math.random() * ESPERA_BASE_MS);
+        console.warn(
+          `[${new Date().toISOString()}] PUBSUB ${pedido.uuid}: ${error.code} ` +
+          `na tentativa ${tentativa}/${MAX_TENTATIVAS}, repetindo em ${espera}ms`
+        );
+        await esperar(espera);
+      }
+    }
+  }
+
+  throw ultimoErro;
 }
 
 module.exports = { salvarPedido };
