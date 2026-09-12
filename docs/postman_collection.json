@@ -1,0 +1,996 @@
+{
+  "info": {
+    "name": "API de Pedidos - Mensageria",
+    "description": "Testes das rotas da API de pedidos consumidos do Google Cloud Pub/Sub.\n\nAntes de rodar: suba a aplicacao com `npm start`.\n\nCada requisicao tem testes automaticos na aba Tests. Use o Collection Runner (botao Run) para executar tudo de uma vez.\n\nAs variaveis da colecao apontam para registros que existem na base; ajuste em Variables se necessario.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000", "type": "string" },
+    { "key": "uuid", "value": "ff1ecb8e-35fa-4d15-959d-12b4d6a8157a", "type": "string" },
+    { "key": "customerId", "value": "1050", "type": "string" },
+    { "key": "sellerId", "value": "116", "type": "string" },
+    { "key": "productId", "value": "ELEC-007", "type": "string" },
+    { "key": "status", "value": "paid", "type": "string" },
+    { "key": "startDate", "value": "2026-09-01", "type": "string" },
+    { "key": "endDate", "value": "2026-09-30", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "1. Listagem e paginacao",
+      "item": [
+        {
+          "name": "Listar pedidos (pagina 1)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders?page=1&page_size=5",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "page_size", "value": "5" }
+              ]
+            },
+            "description": "Lista paginada com o payload completo de cada pedido."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Envelope com data, pagination, sort e filters', function () {",
+                  "  pm.expect(body).to.have.all.keys('data', 'pagination', 'sort', 'filters');",
+                  "});",
+                  "",
+                  "pm.test('Respeita o page_size', function () {",
+                  "  pm.expect(body.data.length).to.be.at.most(5);",
+                  "  pm.expect(body.pagination.page_size).to.eql(5);",
+                  "});",
+                  "",
+                  "pm.test('Pagination com contadores coerentes', function () {",
+                  "  const p = body.pagination;",
+                  "  pm.expect(p.total_items).to.be.a('number');",
+                  "  pm.expect(p.total_pages).to.eql(Math.ceil(p.total_items / p.page_size));",
+                  "  pm.expect(p.has_previous).to.eql(false);",
+                  "});",
+                  "",
+                  "pm.test('Cada pedido traz o payload completo', function () {",
+                  "  body.data.forEach(function (pedido) {",
+                  "    pm.expect(pedido).to.include.keys('uuid', 'created_at', 'channel', 'total', 'status', 'customer', 'seller', 'items', 'shipment', 'payment', 'metadata');",
+                  "    pm.expect(pedido.customer).to.include.keys('id', 'name', 'email', 'document');",
+                  "    pm.expect(pedido.items).to.be.an('array');",
+                  "  });",
+                  "});",
+                  "",
+                  "pm.test('Total do pedido = soma de unit_price x quantity', function () {",
+                  "  body.data.forEach(function (pedido) {",
+                  "    const soma = pedido.items.reduce(function (s, i) { return s + i.unit_price * i.quantity; }, 0);",
+                  "    pm.expect(pedido.total).to.be.closeTo(soma, 0.01);",
+                  "  });",
+                  "});",
+                  "",
+                  "if (body.data.length) {",
+                  "  pm.collectionVariables.set('uuidEncontrado', body.data[0].uuid);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Listar pedidos (pagina 2)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders?page=2&page_size=5",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"],
+              "query": [
+                { "key": "page", "value": "2" },
+                { "key": "page_size", "value": "5" }
+              ]
+            },
+            "description": "Comprova que a paginacao avanca e devolve registros diferentes."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Esta na pagina 2', function () {",
+                  "  pm.expect(body.pagination.page).to.eql(2);",
+                  "  pm.expect(body.pagination.has_previous).to.eql(true);",
+                  "});",
+                  "",
+                  "pm.test('Traz pedido diferente da pagina 1', function () {",
+                  "  const daPagina1 = pm.collectionVariables.get('uuidEncontrado');",
+                  "  if (daPagina1 && body.data.length) {",
+                  "    pm.expect(body.data[0].uuid).to.not.eql(daPagina1);",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ordenacao por data (desc)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders?sort=created_at&order=desc&page_size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"],
+              "query": [
+                { "key": "sort", "value": "created_at" },
+                { "key": "order", "value": "desc" },
+                { "key": "page_size", "value": "20" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Ordenado por created_at decrescente', function () {",
+                  "  const datas = body.data.map(function (p) { return new Date(p.created_at).getTime(); });",
+                  "  for (let i = 1; i < datas.length; i++) {",
+                  "    pm.expect(datas[i]).to.be.at.most(datas[i - 1]);",
+                  "  }",
+                  "});",
+                  "",
+                  "pm.test('Sort refletido na resposta', function () {",
+                  "  pm.expect(body.sort).to.eql({ field: 'created_at', order: 'desc' });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ordenacao por data (asc)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders?sort=created_at&order=asc&page_size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"],
+              "query": [
+                { "key": "sort", "value": "created_at" },
+                { "key": "order", "value": "asc" },
+                { "key": "page_size", "value": "20" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Ordenado por created_at crescente', function () {",
+                  "  const datas = body.data.map(function (p) { return new Date(p.created_at).getTime(); });",
+                  "  for (let i = 1; i < datas.length; i++) {",
+                  "    pm.expect(datas[i]).to.be.at.least(datas[i - 1]);",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ordenacao por data de indexacao",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders?sort=indexed_at&order=desc&page_size=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"],
+              "query": [
+                { "key": "sort", "value": "indexed_at" },
+                { "key": "order", "value": "desc" },
+                { "key": "page_size", "value": "10" }
+              ]
+            },
+            "description": "Ordena pela hora em que a mensagem foi gravada no banco."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Ordenado por indexed_at decrescente', function () {",
+                  "  const datas = body.data.map(function (p) { return new Date(p.indexed_at).getTime(); });",
+                  "  for (let i = 1; i < datas.length; i++) {",
+                  "    pm.expect(datas[i]).to.be.at.most(datas[i - 1]);",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Filtros",
+      "item": [
+        {
+          "name": "Filtrar por customer.id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders?customer.id={{customerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"],
+              "query": [{ "key": "customer.id", "value": "{{customerId}}" }]
+            },
+            "description": "Filtro exigido no enunciado: /orders?customer.id=49494"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const esperado = Number(pm.collectionVariables.get('customerId'));",
+                  "",
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Retornou pedidos', function () {",
+                  "  pm.expect(body.pagination.total_items).to.be.above(0);",
+                  "});",
+                  "",
+                  "pm.test('Todos os pedidos sao do cliente informado', function () {",
+                  "  body.data.forEach(function (p) {",
+                  "    pm.expect(p.customer.id).to.eql(esperado);",
+                  "  });",
+                  "});",
+                  "",
+                  "pm.test('Filtro ecoado na resposta', function () {",
+                  "  pm.expect(body.filters['customer.id']).to.eql(esperado);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filtrar por seller.id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders?seller.id={{sellerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"],
+              "query": [{ "key": "seller.id", "value": "{{sellerId}}" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const esperado = Number(pm.collectionVariables.get('sellerId'));",
+                  "",
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Retornou pedidos', function () {",
+                  "  pm.expect(body.pagination.total_items).to.be.above(0);",
+                  "});",
+                  "",
+                  "pm.test('Todos os pedidos sao do seller informado', function () {",
+                  "  body.data.forEach(function (p) {",
+                  "    pm.expect(p.seller.id).to.eql(esperado);",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filtrar por product.id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders?product.id={{productId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"],
+              "query": [{ "key": "product.id", "value": "{{productId}}" }]
+            },
+            "description": "Retorna os pedidos que contenham o produto informado em algum item."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const esperado = pm.collectionVariables.get('productId');",
+                  "",
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Retornou pedidos', function () {",
+                  "  pm.expect(body.pagination.total_items).to.be.above(0);",
+                  "});",
+                  "",
+                  "pm.test('Todo pedido tem ao menos um item com o produto', function () {",
+                  "  body.data.forEach(function (p) {",
+                  "    const tem = p.items.some(function (i) { return i.product.id === esperado; });",
+                  "    pm.expect(tem, 'pedido ' + p.uuid).to.eql(true);",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filtrar por status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders?status={{status}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"],
+              "query": [{ "key": "status", "value": "{{status}}" }]
+            },
+            "description": "Status possiveis: created, paid, shipped, delivered, canceled."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const esperado = pm.collectionVariables.get('status');",
+                  "",
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Todos os pedidos tem o status filtrado', function () {",
+                  "  body.data.forEach(function (p) {",
+                  "    pm.expect(p.status).to.eql(esperado);",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Combinando filtros (seller + status)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders?seller.id={{sellerId}}&status={{status}}&page_size=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"],
+              "query": [
+                { "key": "seller.id", "value": "{{sellerId}}" },
+                { "key": "status", "value": "{{status}}" },
+                { "key": "page_size", "value": "10" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Os dois filtros sao aplicados juntos', function () {",
+                  "  const seller = Number(pm.collectionVariables.get('sellerId'));",
+                  "  const status = pm.collectionVariables.get('status');",
+                  "  body.data.forEach(function (p) {",
+                  "    pm.expect(p.seller.id).to.eql(seller);",
+                  "    pm.expect(p.status).to.eql(status);",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Pedido e itens",
+      "item": [
+        {
+          "name": "Detalhe do pedido",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders/{{uuid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "{{uuid}}"]
+            },
+            "description": "Retorna o payload completo do pedido, no mesmo contrato recebido do Pub/Sub."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const p = pm.response.json();",
+                  "",
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Campos de primeiro nivel do payload', function () {",
+                  "  pm.expect(p).to.include.keys('uuid', 'created_at', 'channel', 'total', 'status', 'customer', 'seller', 'items', 'shipment', 'payment', 'metadata', 'indexed_at');",
+                  "});",
+                  "",
+                  "pm.test('customer completo', function () {",
+                  "  pm.expect(p.customer).to.include.keys('id', 'name', 'email', 'document');",
+                  "});",
+                  "",
+                  "pm.test('seller completo', function () {",
+                  "  pm.expect(p.seller).to.include.keys('id', 'name', 'city', 'state');",
+                  "});",
+                  "",
+                  "pm.test('shipment completo', function () {",
+                  "  pm.expect(p.shipment).to.include.keys('carrier', 'service', 'status', 'tracking_code');",
+                  "});",
+                  "",
+                  "pm.test('payment completo', function () {",
+                  "  pm.expect(p.payment).to.include.keys('method', 'status', 'transaction_id');",
+                  "});",
+                  "",
+                  "pm.test('metadata completo', function () {",
+                  "  pm.expect(p.metadata).to.include.keys('source', 'user_agent', 'ip_address');",
+                  "});",
+                  "",
+                  "pm.test('Itens com produto, categoria e subcategoria', function () {",
+                  "  p.items.forEach(function (item) {",
+                  "    pm.expect(item).to.include.keys('id', 'product', 'unit_price', 'quantity', 'category', 'total');",
+                  "    pm.expect(item.product).to.include.keys('id', 'title');",
+                  "    if (item.category) {",
+                  "      pm.expect(item.category).to.include.keys('id', 'name');",
+                  "    }",
+                  "  });",
+                  "});",
+                  "",
+                  "pm.test('Total de cada item = unit_price x quantity', function () {",
+                  "  p.items.forEach(function (item) {",
+                  "    pm.expect(item.total).to.be.closeTo(item.unit_price * item.quantity, 0.01);",
+                  "  });",
+                  "});",
+                  "",
+                  "pm.test('Total do pedido = soma dos itens', function () {",
+                  "  const soma = p.items.reduce(function (s, i) { return s + i.total; }, 0);",
+                  "  pm.expect(p.total).to.be.closeTo(soma, 0.01);",
+                  "});",
+                  "",
+                  "pm.test('created_at e indexed_at em ISO 8601', function () {",
+                  "  pm.expect(new Date(p.created_at).toString()).to.not.eql('Invalid Date');",
+                  "  pm.expect(new Date(p.indexed_at).toString()).to.not.eql('Invalid Date');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Itens do pedido",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders/{{uuid}}/items",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "{{uuid}}", "items"]
+            },
+            "description": "Retorna apenas a estrutura de itens, mantendo o formato do payload."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Resposta traz apenas uuid e items', function () {",
+                  "  pm.expect(body).to.have.all.keys('uuid', 'items');",
+                  "});",
+                  "",
+                  "pm.test('Nao repete os dados do pedido', function () {",
+                  "  pm.expect(body).to.not.have.property('customer');",
+                  "  pm.expect(body).to.not.have.property('payment');",
+                  "  pm.expect(body).to.not.have.property('shipment');",
+                  "});",
+                  "",
+                  "pm.test('Estrutura do item preservada', function () {",
+                  "  pm.expect(body.items).to.be.an('array').that.is.not.empty;",
+                  "  body.items.forEach(function (item) {",
+                  "    pm.expect(item).to.include.keys('id', 'product', 'unit_price', 'quantity', 'category', 'total');",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pedido inexistente (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders/ORD-NAO-EXISTE",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "ORD-NAO-EXISTE"]
+            },
+            "description": "Comportamento RESTful para recurso inexistente."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', function () {",
+                  "  pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "pm.test('Corpo com error.code e error.message', function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.error.code).to.eql('ORDER_NOT_FOUND');",
+                  "  pm.expect(body.error.message).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Resumo financeiro",
+      "item": [
+        {
+          "name": "Resumo geral",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders/financial-summary",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "financial-summary"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Campos do modelo do enunciado', function () {",
+                  "  pm.expect(body).to.include.keys('total_orders', 'total_revenue', 'average_order_value', 'by_status', 'by_payment_method');",
+                  "});",
+                  "",
+                  "pm.test('Media = receita / quantidade', function () {",
+                  "  if (body.total_orders > 0) {",
+                  "    pm.expect(body.average_order_value).to.be.closeTo(body.total_revenue / body.total_orders, 0.01);",
+                  "  }",
+                  "});",
+                  "",
+                  "pm.test('Soma de by_status = total_orders', function () {",
+                  "  const soma = Object.values(body.by_status).reduce(function (s, n) { return s + n; }, 0);",
+                  "  pm.expect(soma).to.eql(body.total_orders);",
+                  "});",
+                  "",
+                  "pm.test('by_payment_method com count e total, somando o total geral', function () {",
+                  "  let contagem = 0;",
+                  "  let receita = 0;",
+                  "  Object.values(body.by_payment_method).forEach(function (m) {",
+                  "    pm.expect(m).to.have.all.keys('count', 'total');",
+                  "    contagem += m.count;",
+                  "    receita += m.total;",
+                  "  });",
+                  "  pm.expect(contagem).to.eql(body.total_orders);",
+                  "  pm.expect(receita).to.be.closeTo(body.total_revenue, 0.05);",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set('receitaTotal', body.total_revenue);",
+                  "pm.collectionVariables.set('pedidosTotal', body.total_orders);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Resumo por seller.id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders/financial-summary?seller.id={{sellerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "financial-summary"],
+              "query": [{ "key": "seller.id", "value": "{{sellerId}}" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Filtro reduz o total em relacao ao geral', function () {",
+                  "  const geral = Number(pm.collectionVariables.get('pedidosTotal'));",
+                  "  pm.expect(body.total_orders).to.be.above(0);",
+                  "  pm.expect(body.total_orders).to.be.below(geral);",
+                  "});",
+                  "",
+                  "pm.test('Filtro ecoado na resposta', function () {",
+                  "  pm.expect(body.filters['seller.id']).to.eql(Number(pm.collectionVariables.get('sellerId')));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Resumo por periodo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders/financial-summary?start_date={{startDate}}&end_date={{endDate}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "financial-summary"],
+              "query": [
+                { "key": "start_date", "value": "{{startDate}}" },
+                { "key": "end_date", "value": "{{endDate}}" }
+              ]
+            },
+            "description": "Filtro por data entre inicio e fim. Aceita YYYY-MM-DD ou ISO 8601."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Periodo aplicado e devolvido', function () {",
+                  "  pm.expect(body.filters.start_date).to.be.a('string');",
+                  "  pm.expect(body.filters.end_date).to.be.a('string');",
+                  "});",
+                  "",
+                  "pm.test('end_date cobre o dia inteiro', function () {",
+                  "  pm.expect(body.filters.end_date).to.include('23:59:59');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Resumo em periodo sem pedidos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders/financial-summary?start_date=2020-01-01&end_date=2020-01-31",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "financial-summary"],
+              "query": [
+                { "key": "start_date", "value": "2020-01-01" },
+                { "key": "end_date", "value": "2020-01-31" }
+              ]
+            },
+            "description": "Periodo vazio deve responder com zeros, nao com erro."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Zerado, sem erro', function () {",
+                  "  pm.expect(body.total_orders).to.eql(0);",
+                  "  pm.expect(body.total_revenue).to.eql(0);",
+                  "  pm.expect(body.average_order_value).to.eql(0);",
+                  "  pm.expect(body.by_status).to.eql({});",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Validacao e servico",
+      "item": [
+        {
+          "name": "Parametro page invalido (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders?page=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"],
+              "query": [{ "key": "page", "value": "0" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test('Erro INVALID_REQUEST explicando o parametro', function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.error.code).to.eql('INVALID_REQUEST');",
+                  "  pm.expect(body.error.message).to.include('page');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Campo de ordenacao invalido (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders?sort=preco",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"],
+              "query": [{ "key": "sort", "value": "preco" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test('Mensagem lista os valores aceitos', function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.error.message).to.include('created_at');",
+                  "  pm.expect(body.error.message).to.include('indexed_at');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Data invalida (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders/financial-summary?start_date=ontem",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "financial-summary"],
+              "query": [{ "key": "start_date", "value": "ontem" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test('Explica o formato esperado', function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.error.message).to.include('start_date');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Rota inexistente (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pedidos",
+              "host": ["{{baseUrl}}"],
+              "path": ["pedidos"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', function () {",
+                  "  pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "pm.test('Codigo NOT_FOUND', function () {",
+                  "  pm.expect(pm.response.json().error.code).to.eql('NOT_FOUND');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Health check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Verifica a API e a conexao com o MySQL."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('API e banco respondendo', function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.status).to.eql('ok');",
+                  "  pm.expect(body.database).to.eql('marketplace');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Especificacao OpenAPI",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/openapi.json",
+              "host": ["{{baseUrl}}"],
+              "path": ["openapi.json"]
+            },
+            "description": "A mesma especificacao exibida em /docs (Swagger UI)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Documenta as rotas de pedidos', function () {",
+                  "  const spec = pm.response.json();",
+                  "  pm.expect(spec.openapi).to.be.a('string');",
+                  "  pm.expect(spec.paths).to.include.keys('/orders', '/orders/{uuid}', '/orders/{uuid}/items', '/orders/financial-summary');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
